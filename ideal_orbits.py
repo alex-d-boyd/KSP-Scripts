@@ -43,21 +43,6 @@ def coprimes_of(n: int, limit: int = -1) -> Iterator[int]:
         k += 1
 
 
-def get_fov_at_radius(base_fov: float, best_altitude: float, radius: float, body: Body) -> float:
-    """
-    Finds the field of view at a given radius from the centre of the body. This is done without the usual scaling limits
-    :param base_fov: The field of view without any scaling
-    :param best_altitude: The altitude at which the field of view would normally stop scaling
-    :param radius: The radius to the focus of the orbit
-    :param body: The body being orbited
-    :return: the field of view at that radius
-    """
-    scaled_fov = base_fov * (radius - body.radius)/best_altitude
-    if body.radius < Body.KERBIN_RADIUS:
-        scaled_fov *= math.sqrt(Body.KERBIN_RADIUS/body.radius)
-    return scaled_fov
-
-
 ########################################################################################################################
 # Notes on the derivation of the following section:
 #
@@ -267,18 +252,17 @@ def solve_cubic(a: float, b: float, c: float, d: float) -> Union[float, Tuple[fl
     return root1, root2, root3
 
 
-def calculate_eccentricity_bounds(body: Body, semi_major_axis: float, track_angle: float, fov_at_sma: float)\
+def calculate_eccentricity_bounds(body: Body, semi_major_axis: float, track_altitude: float) \
         -> Optional[Tuple[float, float]]:
-    k = track_angle * (semi_major_axis - body.radius) / fov_at_sma
 
     # calculates the eccentricity bounds where the fov from true anomaly graph touches in one place
     # lower bound touches at equator, upper bound touches at poles. done by solving the quadratic formula for
     # roots = 1, 0 respectively
-    lower_bound = calculate_eccentricity_lower_bound(semi_major_axis, body, k)
+    lower_bound = calculate_eccentricity_lower_bound(semi_major_axis, body, track_altitude)
     upper_bound = calculate_eccentricity_upper_bound(semi_major_axis, body)
 
-    root_at_lower = find_root_at_lower_bound(semi_major_axis, body, lower_bound, k)
-    root_at_upper = find_root_at_upper_bound(semi_major_axis, body, upper_bound, k)
+    root_at_lower = find_root_at_lower_bound(semi_major_axis, body, lower_bound, track_altitude)
+    root_at_upper = find_root_at_upper_bound(semi_major_axis, body, upper_bound, track_altitude)
 
     # epsilon used to compensate for floating point errors
     epsilon: float = 1e-5
@@ -286,7 +270,10 @@ def calculate_eccentricity_bounds(body: Body, semi_major_axis: float, track_angl
     # checks additive root matches lower bound and subtractive matches upper bound. If not, the mismatch
     # needs to be replaced by the roots of the underlying cubic.
     if root_at_lower < (1-epsilon) or root_at_upper > epsilon:
-        roots = solve_cubic(4*k, body.radius**2, 2*k*body.radius - 4*k*semi_major_axis, k**2)
+        roots = solve_cubic(4 * track_altitude,
+                            body.radius ** 2,
+                            2 * track_altitude * (body.radius - 2 * semi_major_axis),
+                            track_altitude ** 2)
         if type(roots) is not tuple:
             return None
 
@@ -297,26 +284,27 @@ def calculate_eccentricity_bounds(body: Body, semi_major_axis: float, track_angl
     return max(lower_bound, 0), min(upper_bound, 1)
 
 
-def find_orbits(body: Body, field_of_view: float, min_altitude: float, best_altitude: float, max_altitude: float):
+def find_orbits(body: Body, field_of_view: float, track_altitude: float, best_altitude: float, max_altitude: float):
 
     # scale the field of view to the planet's radius as done in ScanSat
     scaled_fov: float = field_of_view
     if body.radius < Body.KERBIN_RADIUS:
         scaled_fov *= math.sqrt(Body.KERBIN_RADIUS / body.radius)
-    scaled_fov = min(scaled_fov, 20)
 
     # calculate the minimum number of ground tracks for 100% coverage at the equator
-    min_ground_tracks: int = math.ceil(180 / scaled_fov)
+    min_ground_tracks: int = math.ceil(180 / min(scaled_fov, 20))
 
     # calculate orbital limits
     max_radius_apoapsis: float = body.radius + max_altitude  # cannot scan at apoapsis if above best altitude
     min_radius_periapsis: float = body.radius + body.safe_altitude  # if periapsis below safe altitude we will crash
-    min_radius_polar: float = body.radius + min_altitude  # cannot scan at poles if radius below minimum altitude
+    min_radius_polar: float = body.radius + track_altitude  # cannot scan at poles if radius below minimum altitude
 
     best_track_skip: int = -1
     best_orbit = None
     for n_tracks in range(min_ground_tracks, 2*min_ground_tracks):
         track_angle: float = 180 / n_tracks
+
+        track_altitude = track_angle * best_altitude / scaled_fov
 
         for track_skip in coprimes_of(n_tracks, best_track_skip):
 
@@ -327,8 +315,7 @@ def find_orbits(body: Body, field_of_view: float, min_altitude: float, best_alti
             if semi_major_axis > max_radius_apoapsis:
                 break
 
-            fov_at_radius: float = get_fov_at_radius(field_of_view, best_altitude, semi_major_axis, body)
-            eccentricity = calculate_eccentricity_bounds(body, semi_major_axis, track_angle, fov_at_radius)
+            eccentricity = calculate_eccentricity_bounds(body, semi_major_axis, track_altitude)
 
             if eccentricity is None:
                 continue  # no valid orbits, continue
