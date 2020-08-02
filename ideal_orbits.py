@@ -30,6 +30,12 @@ class Body:
 
 
 def coprimes_of(n: int, limit: int = -1) -> Iterator[int]:
+    """
+    Create a generator that returns the coprimes of n upto a limit, or forever if none provided
+    :param n: The number to find coprimes of
+    :param limit: The cutoff point (inclusive). -1 if no cutoff
+    :return: Coprimes of n
+    """
     k: int = 1
     while k <= limit or limit == -1:
         if math.gcd(n, k) == 1:
@@ -38,13 +44,137 @@ def coprimes_of(n: int, limit: int = -1) -> Iterator[int]:
 
 
 def get_fov_at_radius(base_fov: float, best_altitude: float, radius: float, body: Body) -> float:
+    """
+    Finds the field of view at a given radius from the centre of the body. This is done without the usual scaling limits
+    :param base_fov: The field of view without any scaling
+    :param best_altitude: The altitude at which the field of view would normally stop scaling
+    :param radius: The radius to the focus of the orbit
+    :param body: The body being orbited
+    :return: the field of view at that radius
+    """
     scaled_fov = base_fov * (radius - body.radius)/best_altitude
     if body.radius < Body.KERBIN_RADIUS:
         scaled_fov *= math.sqrt(Body.KERBIN_RADIUS/body.radius)
     return scaled_fov
 
 
+########################################################################################################################
+# Notes on the derivation of the following section:
+#
+# Starting with the equation for radius from the true anomaly we have:
+#
+#   r(a, e, v) = a * (1 - e^2)/(1 + e*cos(v))       (1)
+#
+# where
+#   r is the distance from the focus point
+#   a is the semi-major axis
+#   e is the eccentricity of the orbit
+#   v is the true anomaly
+#
+# We know that in ScanSat, the size of the body as
+#
+#   f(R) = f0 * Rk / R      (2)
+#
+# and with the size of the body as
+#
+#   f(A, R) = f(R) * A / A0     (3)
+#
+# where
+#   f is the field of view --- the width in degrees scanned by the satellite at the equator
+#   f0 is the base field of view for the scanner
+#   A0 is the altitude at which the base field of view applies
+#   R is the radius of the body being scanned
+#   Rk is the radius of the planet Kerbin
+#
+# given that altitude can be rewritten as
+#
+#   A(a, e, v, R) = r(a, e, v) - R        (4)
+#
+# our field of view is
+#
+#   f(a, e, v, R) = f(R) * (r(a, e, v) - R) / A0       (5)
+#
+# We also know that the circumference, C, of each latitude, l, changes as
+#
+#   C(l) = C(0) * cos(l)        (6)
+#
+# when the apoapsis is above the equator, we are interested in 'v' in [90°, 180°]. In this case we also get
+#
+#   C(v) = C(0) * -cos(v)       (8)
+#
+# and can use the substitution `v = w + 90°` to make
+#
+#   C(w) = C(90°) * sin(w)      (9)
+#
+#   r(a, e, w) = a * (1 - e^2)/(1 - e*sin(w))       (10)
+#
+# If we have a tracks required to sweep an angle of k, we require that
+#
+#   k * C(w) <= f(a, e, w, R)       (11)
+#
+# for all values of w, given fixed a, e, R
+#
+# This can be rearranged into
+#
+#   -eS sin(w)^2 + (S - eR) sin(w) - a(1 - e^2) + R <= 0        (12)
+#
+# where
+#   S = k * A0/f0
+#
+# This can be checked using the quadratic formula where
+#   a = -eS
+#   b = S - eR
+#   c = R - a(1 - e^2)
+# Remembering that as our equation is quadratic in sin, and our domain is [0, 90°] any roots outside [0,1] are not roots
+# of our original problem
+#
+# To find bounds on the values of e, further steps are required.
+# To create an initial lower bound, we need the solutions to the equation
+#
+#   (-b + sqrt(b^2 - 4ac))/(2a) = 1     (13)
+#
+# This becomes the following quadratic
+#
+#   a e^2 - (S+R) e + S + R - a = 0     (14)
+#
+# which is easily solved with the quadratic formula.
+#
+# similarly, we create the upper bound using the other form of the quadratic formula, looking for roots equal to zero.
+#
+#   (-b - sqrt(b^2 - 4ac))/(2a) = 0     (15)
+#
+# which comes to the incredibly nice result of
+#
+#   e = sqrt((a-R)/a)       (16)
+#
+# but is actually just the eccentricity ar which we would crash into the planet at v=90°.
+#
+# using these roots, we check how many solutions are inside our range of [0,1] at each. If either has more than 1 we
+# must replace it with the corresponding root of the discriminant
+#
+#   b^2 - 4ac = 0       (17)
+#
+# this is the cubic equation
+#
+#   4Sa e^3 + R^2 e^2 + 2S(R-2a) e + S^2 = 0        (18)
+#
+# this can be solved using Cardano's formula.
+# Once solved, if there are three real solutions, replace the previous bounds with it's respective root if  required for
+# that bound (i.e. there were multiple roots there in the previous step).
+#
+# These are now your upper and lower bounds, but they don't include any information about minimum or maximum orbit
+# restrictions. Reduce the upper bound until the orbit fits inside the maximum altitude, minimum safe altitude, and
+# satisfies the minimum polar altitude
+########################################################################################################################
+
 def calculate_eccentricity_lower_bound(semi_major_axis: float, body: Body, k: float) -> float:
+    """
+    Finds a lower bound on the eccentricity of the orbit.
+    :param semi_major_axis: the semi-major axis of the orbit
+    :param body: the body being orbited
+    :param k: the
+    :return:
+    """
     a = semi_major_axis
     b = -(k + body.radius)
     c = k + body.radius - semi_major_axis
