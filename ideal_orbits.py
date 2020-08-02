@@ -310,10 +310,10 @@ def find_orbits(body: Body, field_of_view: float, track_altitude: float, best_al
 
             orbit_period: float = track_skip * body.sidereal_day / n_tracks
             semi_major_axis: float = (body.mu * orbit_period**2 / (4 * pi**2)) ** (1/3)
-            if semi_major_axis < min_radius_periapsis or semi_major_axis < min_radius_polar:
-                continue  # axis is too small, advance to increase
             if semi_major_axis > max_radius_apoapsis:
                 break
+            if semi_major_axis < min_radius_periapsis or semi_major_axis < min_radius_polar:
+                continue  # axis is too small, advance to increase
 
             eccentricity = calculate_eccentricity_bounds(body, semi_major_axis, track_altitude)
 
