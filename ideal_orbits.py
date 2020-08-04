@@ -44,286 +44,32 @@ def coprimes_of(n: int, limit: int = -1) -> Iterator[int]:
         k += 1
 
 
-########################################################################################################################
-# Notes on the derivation of the following section:
-#
-# Starting with the equation for radius from the true anomaly we have:
-#
-#   r(a, e, v) = a * (1 - e^2)/(1 + e*cos(v))       (1)
-#
-# where
-#   r is the distance from the focus point
-#   a is the semi-major axis
-#   e is the eccentricity of the orbit
-#   v is the true anomaly
-#
-# We know that in ScanSat, the size of the body as
-#
-#   f(R) = f0 * Rk / R      (2)
-#
-# and with the size of the body as
-#
-#   f(A, R) = f(R) * A / A0     (3)
-#
-# where
-#   f is the field of view --- the width in degrees scanned by the satellite at the equator
-#   f0 is the base field of view for the scanner
-#   A0 is the altitude at which the base field of view applies
-#   R is the radius of the body being scanned
-#   Rk is the radius of the planet Kerbin
-#
-# given that altitude can be rewritten as
-#
-#   A(a, e, v, R) = r(a, e, v) - R        (4)
-#
-# our field of view is
-#
-#   f(a, e, v, R) = f(R) * (r(a, e, v) - R) / A0       (5)
-#
-# We also know that the circumference, C, of each latitude, l, changes as
-#
-#   C(l) = C(0) * cos(l)        (6)
-#
-# when the apoapsis is above the equator, we are interested in 'v' in [90°, 180°]. In this case we also get
-#
-#   C(v) = C(0) * -cos(v)       (8)
-#
-# and can use the substitution `v = w + 90°` to make
-#
-#   C(w) = C(90°) * sin(w)      (9)
-#
-#   r(a, e, w) = a * (1 - e^2)/(1 - e*sin(w))       (10)
-#
-# If we have a tracks required to sweep an angle of k, we require that
-#
-#   k * C(w) <= f(a, e, w, R)       (11)
-#
-# for all values of w, given fixed a, e, R
-#
-# This can be rearranged into
-#
-#   -eS sin(w)^2 + (S - eR) sin(w) - a(1 - e^2) + R <= 0        (12)
-#
-# where
-#   S = k * A0/f0
-#
-# This can be checked using the quadratic formula where
-#   a = -eS
-#   b = S - eR
-#   c = R - a(1 - e^2)
-# Remembering that as our equation is quadratic in sin, and our domain is [0, 90°] any roots outside [0,1] are not roots
-# of our original problem
-#
-# To find bounds on the values of e, further steps are required.
-# To create an initial lower bound, we need the solutions to the equation
-#
-#   (-b + sqrt(b^2 - 4ac))/(2a) = 1     (13)
-#
-# This becomes the following quadratic
-#
-#   a e^2 - (S+R) e + S + R - a = 0     (14)
-#
-# which is easily solved with the quadratic formula.
-#
-# similarly, we create the upper bound using the other form of the quadratic formula, looking for roots equal to zero.
-#
-#   (-b - sqrt(b^2 - 4ac))/(2a) = 0     (15)
-#
-# which comes to the incredibly nice result of
-#
-#   e = sqrt((a-R)/a)       (16)
-#
-# but is actually just the eccentricity ar which we would crash into the planet at v=90°.
-#
-# using these roots, we check how many solutions are inside our range of [0,1] at each. If either has more than 1 we
-# must replace it with the corresponding root of the discriminant
-#
-#   b^2 - 4ac = 0       (17)
-#
-# this is the cubic equation
-#
-#   4Sa e^3 + R^2 e^2 + 2S(R-2a) e + S^2 = 0        (18)
-#
-# this can be solved using Cardano's formula.
-# Once solved, if there are three real solutions, replace the previous bounds with it's respective root if  required for
-# that bound (i.e. there were multiple roots there in the previous step).
-#
-# These are now your upper and lower bounds, but they don't include any information about minimum or maximum orbit
-# restrictions. Reduce the upper bound until the orbit fits inside the maximum altitude, minimum safe altitude, and
-# satisfies the minimum polar altitude
-########################################################################################################################
+def find_eccentricity_bounds(body: Body,
+                             semi_major_axis: float,
+                             track_altitude: float,
+                             min_altitude: float,
+                             max_altitude: float) -> Optional[Tuple[float, float]]:
 
-def calculate_eccentricity_lower_bound(semi_major_axis: float, body: Body, track_altitude: float) -> float:
-    """
-    Finds a lower bound on the eccentricity of the orbit.
+    ecc_polar = math.sqrt(max(1 - (body.radius + min_altitude)/semi_major_axis, 0))
+    ecc_periapsis = 1 - (body.radius + body.safe_altitude)/semi_major_axis
+    ecc_apoapsis = (body.radius + max_altitude)/semi_major_axis - 1
 
-    :param semi_major_axis: the semi-major axis of the orbit
-    :param body: the body being orbited
-    :param track_altitude: the altitude at which fov matches the track fov
-    :return: the eccentricity lower bound
-    """
+    ecc_max = min(ecc_polar, ecc_periapsis, ecc_apoapsis)
+
     a = semi_major_axis
     b = -(track_altitude + body.radius)
     c = track_altitude + body.radius - semi_major_axis
+    ecc_min = (- b - math.sqrt(b**2 - 4*a*c))/(2*a)
 
-    return (- b - math.sqrt(b**2 - 4*a*c))/(2*a)
+    if ecc_min >= ecc_max:
+        return None
 
+    ecc_warning = track_altitude/(2*track_altitude + body.radius)
+    if ecc_min > ecc_warning:
+        # pretty sure I proved this can't happen, but warning just in case
+        print("\x1b[31mWarning: minimum eccentricity above divergent bound!\x1b[0m")
 
-def find_root_at_lower_bound(semi_major_axis: float, body: Body, bound: float, track_altitude: float) -> float:
-    """
-    Calculates the value of the root in sin(w) at the lower bound of eccentricity
-
-    :param semi_major_axis: the semi-major axis of the orbit
-    :param body: the body being orbited
-    :param bound: the lower bound being tested
-    :param track_altitude: the altitude at which fov matches the track fov
-    :return: the value of the root in sin(w) at the bound
-    """
-    a = -bound * track_altitude
-    b = track_altitude - bound * body.radius
-    c = body.radius - semi_major_axis*(1 - bound**2)
-
-    return (-b + math.sqrt(b**2 - 4*a*c))/(2*a)
-
-
-def calculate_eccentricity_upper_bound(semi_major_axis: float, body: Body) -> float:
-    """
-    Finds an upper bound on the eccentricity of the orbit.
-
-    :param semi_major_axis: the semi-major axis of the orbit
-    :param body: the body being orbited
-    :return: the eccentricity upper bound
-    """
-    return math.sqrt((semi_major_axis - body.radius) / semi_major_axis)
-
-
-def find_root_at_upper_bound(semi_major_axis: float, body: Body, bound: float, track_altitude: float) -> float:
-    """
-    Calculates the value of the root in sin(w) at the upper bound of eccentricity
-
-    :param semi_major_axis: the semi-major axis of the orbit
-    :param body: the body being orbited
-    :param bound: the upper bound being tested
-    :param track_altitude: the altitude at which fov matches the track fov
-    :return: the value of the root in sin(w) at the bound
-    """
-    a = -bound * track_altitude
-    b = track_altitude - bound * body.radius
-    c = body.radius - semi_major_axis*(1 - bound**2)
-
-    return (-b - math.sqrt(b**2 - 4*a*c))/(2*a)
-
-
-def rect_to_polar(re: float, im: float) -> Tuple[float, float]:
-    """converts the rectangular complex number re + im*j to polar form r(cos a + j sin a)"""
-    r: float = math.sqrt(re**2 + im**2)
-    a: float = math.atan2(im, re)
-    return r, a
-
-
-def polar_to_rect(r: float, a: float) -> Tuple[float, float]:
-    """converts the polar complex number r(cos a + j sin a) to rectangular form re + im*j"""
-    re: float = r*math.cos(a)
-    im: float = r*math.sin(a)
-    return re, im
-
-
-def complex_power(re: float, im: float, p: float) -> Tuple[float, float]:
-    """performs z^p for rectangular complex number z = re + im*j"""
-    r, a = rect_to_polar(re, im)
-    r **= p
-    a *= p
-    return polar_to_rect(r, a)
-
-
-def rotate(re: float, im: float, angle: float) -> Tuple[float, float]:
-    """rotates the rectangular complex number re + im*j by angle about 0"""
-
-    r, a = rect_to_polar(re, im)
-    return polar_to_rect(r, a+angle)
-
-
-def solve_cubic(a: float, b: float, c: float, d: float) -> Union[float, Tuple[float, float, float]]:
-    """
-    Solves a cubic of the form ax^3 + bx^2 + cx + d using Cardano's formula by converting to a depressed cubic.
-    does not currently handle the two root case, as it is not required by the problem
-
-    :return: the found roots to the cubic
-    """
-    # convert to depressed cubic px^3 + qx + r
-    p = -b/(3*a)
-    q = p**3 + (b*c - 3*a*d)/(6 * a**2)
-    r = c/(3*a)
-
-    discriminant = q**2 + (r - p**2)**3
-    if discriminant >= 0:  # TODO, two roots when discriminant = 0, not needed for this problem
-        root = math.sqrt(discriminant)
-        left = q + root
-        right = q - root
-        return left**(1/3) + right**(1/3) + p
-
-    re = q
-    im = math.sqrt(-discriminant)
-
-    # find all three cube roots by rotation 120°
-    re, im = complex_power(re, im, 1/3)
-    # both cube roots are complex conjugates, therefore we need only find one and use twice the real part
-    root1 = 2*re + p
-    re, im = rotate(re, im, 2*pi/3)
-    root2 = 2*re + p
-    re, im = rotate(re, im, 2*pi/3)
-    root3 = 2*re + p
-
-    # order the roots smallest to largest
-    if root1 > root2:
-        root1, root2 = root2, root1
-    if root2 > root3:
-        root2, root3 = root3, root2
-    if root1 > root2:
-        root1, root2 = root2, root1
-
-    return root1, root2, root3
-
-
-def calculate_eccentricity_bounds(body: Body, semi_major_axis: float, track_altitude: float) -> Optional[Tuple[float, float]]:
-    """
-    Finds the upper and lower bound on the eccentricity
-
-    :param body: the body being orbited
-    :param semi_major_axis: the semi-major axis
-    :param track_altitude: the altitude at which the scanner field of view matches the track angle
-    :return: the bounds on the eccentricity
-    """
-
-    # calculates the eccentricity bounds where the fov from true anomaly graph touches in one place
-    # lower bound touches at equator, upper bound touches at poles. done by solving the quadratic formula for
-    # roots = 1, 0 respectively
-    lower_bound = calculate_eccentricity_lower_bound(semi_major_axis, body, track_altitude)
-    upper_bound = calculate_eccentricity_upper_bound(semi_major_axis, body)
-
-    # check if bounds are valid. root at lower should be 1, root at upper should be 0.
-    root_at_lower = find_root_at_lower_bound(semi_major_axis, body, lower_bound, track_altitude)
-    root_at_upper = find_root_at_upper_bound(semi_major_axis, body, upper_bound, track_altitude)
-
-    # epsilon used to compensate for floating point errors
-    epsilon: float = 1e-5
-
-    # if bounds are not valid, we need to recalculate based on the rots of the discriminant
-    if root_at_lower < (1-epsilon) or root_at_upper > epsilon:
-        roots = solve_cubic(4 * track_altitude,
-                            body.radius ** 2,
-                            2 * track_altitude * (body.radius - 2 * semi_major_axis),
-                            track_altitude ** 2)
-
-        if type(roots) is not tuple:
-            return None  # the discriminant has no roots in the interested region so there are no solutions
-
-        if root_at_lower < (1-epsilon):
-            lower_bound = roots[1]
-        if root_at_upper > epsilon:
-            upper_bound = roots[2]
-
-    return max(lower_bound, 0), min(upper_bound, 1)
+    return ecc_min, ecc_max
 
 
 def find_orbits(body: Body, field_of_view: float, min_altitude: float, best_altitude: float, max_altitude: float, loose: bool):
@@ -375,28 +121,17 @@ def find_orbits(body: Body, field_of_view: float, min_altitude: float, best_alti
             if semi_major_axis < min_radius_periapsis or semi_major_axis < min_radius_polar:
                 continue  # axis is too small, advance to increase
 
-            eccentricity = calculate_eccentricity_bounds(body, semi_major_axis, track_altitude)
+            eccentricity = find_eccentricity_bounds(body, semi_major_axis, track_altitude, min_altitude, max_altitude)
 
             if eccentricity is None:
                 continue  # no valid orbits, continue
-
-            low_eccentricity, high_eccentricity = eccentricity
-
-            max_ecc_poles = math.sqrt(1 - min_radius_polar/semi_major_axis)
-            max_ecc_periapsis = 1 - min_radius_periapsis/semi_major_axis
-            max_ecc_apoapsis = max_radius_apoapsis/semi_major_axis - 1
-
-            high_eccentricity = min(high_eccentricity, max_ecc_poles, max_ecc_periapsis, max_ecc_apoapsis)
-
-            if high_eccentricity < low_eccentricity:
-                continue
 
             # no need to check if orbit is smaller as new period will always be lower as n_tracks increases
             # and once set best_track skip can only stay ths same or decrease
             best_orbit = {
                 "sma": semi_major_axis,
-                "min_ecc": low_eccentricity,
-                "max_ecc": high_eccentricity,
+                "min_ecc": eccentricity[0],
+                "max_ecc": eccentricity[1],
                 "tracks": n_tracks,
                 "skip": track_skip
             }
@@ -420,13 +155,14 @@ def main():
         body = input("input target body:")
 
     fov = float(input("fov: "))
-    minAlt = float(input("min alt: "))
-    bestAlt = float(input("best alt: "))
-    maxAlt = float(input("max alt: "))
+    min_alt = float(input("min alt: "))
+    best_alt = float(input("best alt: "))
+    max_alt = float(input("max alt: "))
     loose = input("loose? (y/n)").lower() == "y"
 
-    best_orbit = find_orbits(bodies[body], fov, minAlt, bestAlt, maxAlt, loose)
+    best_orbit = find_orbits(bodies[body], fov, min_alt, best_alt, max_alt, loose)
     print(best_orbit)
+
 
 if __name__ == '__main__':
     main()
