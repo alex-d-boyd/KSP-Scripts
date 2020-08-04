@@ -408,9 +408,11 @@ def find_orbits(body: Body, field_of_view: float, min_altitude: float, best_alti
 
 def main():
     bodies = {
-        "kerbin": Body(3.5316e12, Body.KERBIN_RADIUS, 21549.425, 87000),
-        "mun": Body(6.5138398e10, 200000, 138984.38, 15000),
-        "minmus": Body(1.7658e9, 60000, 40400, 8000)
+        "kerbin": Body(3.5316e12, Body.KERBIN_RADIUS, 21549.425, 70000),
+        "mun": Body(6.5138398e10, 200000, 138984.38, 10000),
+        "minmus": Body(1.7658e9, 60000, 40400, 6000),
+        "gilly": Body(8289449.8, 13000, 28255, 8000),
+        "jool": Body(2.82528e14, 6000000, 36000, 200000)
     }
     body = input("input target body:")
     while body not in bodies:
