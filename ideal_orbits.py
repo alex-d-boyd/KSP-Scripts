@@ -363,7 +363,7 @@ def find_orbits(body: Body, field_of_view: float, min_altitude: float, best_alti
     best_orbit = None
     for n_tracks in range(min_ground_tracks, 2*min_ground_tracks):
         track_angle: float = 180 / n_tracks
-        _track_altitude = track_angle * best_altitude / scaled_fov
+        track_altitude = track_angle * best_altitude / scaled_fov
 
         for track_skip in coprimes_of(n_tracks, best_track_skip):
 
@@ -375,7 +375,7 @@ def find_orbits(body: Body, field_of_view: float, min_altitude: float, best_alti
             if semi_major_axis < min_radius_periapsis or semi_major_axis < min_radius_polar:
                 continue  # axis is too small, advance to increase
 
-            eccentricity = calculate_eccentricity_bounds(body, semi_major_axis, _track_altitude)
+            eccentricity = calculate_eccentricity_bounds(body, semi_major_axis, track_altitude)
 
             if eccentricity is None:
                 continue  # no valid orbits, continue
