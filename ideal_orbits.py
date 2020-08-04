@@ -326,7 +326,7 @@ def calculate_eccentricity_bounds(body: Body, semi_major_axis: float, track_alti
     return max(lower_bound, 0), min(upper_bound, 1)
 
 
-def find_orbits(body: Body, field_of_view: float, min_altitude: float, best_altitude: float, max_altitude: float):
+def find_orbits(body: Body, field_of_view: float, min_altitude: float, best_altitude: float, max_altitude: float, loose: bool):
     """
     Calculates the orbit with the smallest semi-major axis capable of scanning the body in the shortest time possible
 
@@ -400,7 +400,7 @@ def find_orbits(body: Body, field_of_view: float, min_altitude: float, best_alti
                 "tracks": n_tracks,
                 "skip": track_skip
             }
-            best_track_skip = track_skip
+            best_track_skip = track_skip - int(loose)
             break
 
     return best_orbit
@@ -421,10 +421,10 @@ def main():
     minAlt = float(input("min alt: "))
     bestAlt = float(input("best alt: "))
     maxAlt = float(input("max alt: "))
+    loose = input("loose? (y/n)").lower() == "y"
 
-    best_orbit = find_orbits(bodies[body], fov, minAlt, bestAlt, maxAlt)
+    best_orbit = find_orbits(bodies[body], fov, minAlt, bestAlt, maxAlt, loose)
     print(best_orbit)
-
 
 if __name__ == '__main__':
     main()
