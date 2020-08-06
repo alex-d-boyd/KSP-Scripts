@@ -30,6 +30,56 @@ def coprimes_of(n: int, limit: int = -1) -> Iterator[int]:
         k += 1
 
 
+def cuberoot(n: float) -> float:
+    if n < 0:
+        return -cuberoot(-n)
+    return n**(1/3)
+
+
+def cubic_roots(a: float, b: float, c: float, d: float) -> Union[float, Tuple[float, float, float]]:
+    p = (3*a*c - b**2)/(3 * a**2)
+    q = (2*b**3 - 9*a*b*c + 27*d*a**2)/(27 * a**3)
+
+    discriminant = (p**3)/27 + (q**2)/4
+
+    xt = b/(3*a)
+    if discriminant > 0:
+        disc_root = math.sqrt(discriminant)
+
+        t_plus = -(q/2) + disc_root
+        t_minus = -(q/2) - disc_root
+        t = cuberoot(t_plus) + cuberoot(t_minus)
+
+        x = t - xt
+        return x
+
+    if discriminant == 0:
+        if p == 0:
+            return 0, 0, 0
+        t1 = 3*q/p
+        t2 = -3*q/(2*p)
+
+        x1 = t1 - xt
+        x2 = t2 - xt
+
+        return x1, x2, x2
+
+    imag_part = math.sqrt(-discriminant)
+    real_part = -q/2
+
+    magnitude = math.sqrt(real_part**2 + imag_part**2)
+    angle = math.atan2(imag_part, real_part)
+
+    magnitude = cuberoot(magnitude)
+    angle = angle/3
+
+    t1 = 2 * magnitude*math.cos(angle)
+    t2 = 2 * magnitude*math.cos(angle + 2*pi/3)
+    t3 = 2 * magnitude*math.cos(angle - 2*pi/3)
+
+    return t1-xt, t2-xt, t3-xt
+
+
 def find_eccentricity_bounds(body: Body,
                              semi_major_axis: float,
                              track_altitude: float,
@@ -42,18 +92,29 @@ def find_eccentricity_bounds(body: Body,
 
     ecc_max = min(ecc_polar, ecc_periapsis, ecc_apoapsis)
 
-    a = semi_major_axis
-    b = -(track_altitude + body.radius)
-    c = track_altitude + body.radius - semi_major_axis
-    ecc_min = (- b - math.sqrt(b**2 - 4*a*c))/(2*a)
+    ecc_min = (body.radius + track_altitude - semi_major_axis)/semi_major_axis
 
     if ecc_min >= ecc_max:
         return None
 
-    ecc_warning = track_altitude/(2*track_altitude + body.radius)
-    if ecc_min > ecc_warning:
-        # pretty sure I proved this can't happen, but warning just in case
-        print("\x1b[31mWarning: minimum eccentricity above divergent bound!\x1b[0m")
+    ecc_fixed = math.sqrt((semi_major_axis - body.radius)/semi_major_axis)
+
+    min_past_limit = ecc_min > track_altitude/(2*track_altitude + body.radius)
+    max_past_limit = track_altitude > body.radius * ecc_fixed
+    if min_past_limit or max_past_limit:
+        a = 4 * track_altitude * semi_major_axis
+        b = body.radius ** 2
+        c = 2 * track_altitude * (body.radius - 2 * semi_major_axis)
+        d = track_altitude ** 2
+        roots = cubic_roots(a, b, c, d)
+        if type(roots) is not tuple:
+            return None
+
+        roots = sorted(roots)
+        if min_past_limit:
+            ecc_min = roots[1]
+        if max_past_limit:  # the condition can only look at the boundry of when ecc_fixed becomes incorrect, others may still be valid
+            ecc_max = min(ecc_max, roots[2])
 
     return ecc_min, ecc_max
 
