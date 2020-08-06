@@ -1,32 +1,18 @@
 import math
 from math import pi
 from typing import Iterator, Tuple, Union, Optional
+from dataclasses import dataclass
 
 
+KERBIN_RADIUS: float = 600000
+
+
+@dataclass
 class Body:
-    KERBIN_RADIUS: float = 600000
-
-    def __init__(self, mu: float, radius: float, sidereal_day: float, safe_altitude: float):
-        self._mu: float = mu
-        self._radius: float = radius
-        self._sidereal_day: float = sidereal_day
-        self._safe_altitude: float = safe_altitude
-
-    @property
-    def mu(self) -> float:
-        return self._mu
-
-    @property
-    def radius(self) -> float:
-        return self._radius
-
-    @property
-    def sidereal_day(self) -> float:
-        return self._sidereal_day
-
-    @property
-    def safe_altitude(self) -> float:
-        return self._safe_altitude
+    mu: float
+    radius: float
+    sidereal_day: float
+    safe_altitude: float
 
 
 def coprimes_of(n: int, limit: int = -1) -> Iterator[int]:
@@ -94,8 +80,8 @@ def find_orbits(body: Body, field_of_view: float, min_altitude: float, best_alti
     """
     # scale the field of view to the planet's radius as done in ScanSat
     scaled_fov: float = field_of_view
-    if body.radius < Body.KERBIN_RADIUS:
-        scaled_fov *= math.sqrt(Body.KERBIN_RADIUS / body.radius)
+    if body.radius < KERBIN_RADIUS:
+        scaled_fov *= math.sqrt(KERBIN_RADIUS / body.radius)
 
     # calculate the minimum number of ground tracks for 100% coverage at the equator
     min_ground_tracks: int = math.ceil(180 / min(scaled_fov, 20))
@@ -143,7 +129,7 @@ def find_orbits(body: Body, field_of_view: float, min_altitude: float, best_alti
 
 def main():
     bodies = {
-        "kerbin": Body(3.5316e12, Body.KERBIN_RADIUS, 21549.425, 70000),
+        "kerbin": Body(3.5316e12, KERBIN_RADIUS, 21549.425, 70000),
         "mun": Body(6.5138398e10, 200000, 138984.38, 10000),
         "minmus": Body(1.7658e9, 60000, 40400, 6000),
         "gilly": Body(8289449.8, 13000, 28255, 8000),
