@@ -116,7 +116,7 @@ def find_eccentricity_bounds(body: Body,
         if max_past_limit:  # the condition can only look at the boundry of when ecc_fixed becomes incorrect, others may still be valid
             ecc_max = min(ecc_max, roots[2])
 
-    return ecc_min, ecc_max
+    return max(0, ecc_min), ecc_max
 
 
 def find_orbits(body: Body, field_of_view: float, min_altitude: float, best_altitude: float, max_altitude: float, loose: bool):
