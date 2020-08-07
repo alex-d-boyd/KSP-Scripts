@@ -55,7 +55,7 @@ def cubic_roots(a: float, b: float, c: float, d: float) -> Union[float, Tuple[fl
 
     if discriminant == 0:
         if p == 0:
-            return 0, 0, 0
+            return -xt, -xt, -xt
         t1 = 3*q/p
         t2 = -3*q/(2*p)
 
