@@ -3,16 +3,43 @@ from math import pi
 from typing import Iterator, Tuple, Union, Optional
 from dataclasses import dataclass
 
+from kerbal_utils import Body, bodies
+
 
 KERBIN_RADIUS: float = 600000
 
-
 @dataclass
-class Body:
-    mu: float
-    radius: float
-    sidereal_day: float
-    safe_altitude: float
+class Scanner:
+    min_alt: int
+    best_alt: int
+    max_alt: int
+    fov: float
+
+SCANNERS = {'R-3B Radar Altimeter': Scanner(5,70,250,1.5),
+            'R-EO-1 Radar Antenna': Scanner(50,100,500,3.5),
+            'SAR-X Antenna': Scanner(70,250,500,1.5),
+            'SAR-C Antenna': Scanner(500,700,750,3.0),
+            'SAR-L Antenna': Scanner(250,500,1000,4.0),
+            'SCAN-R Resource Mapper': Scanner(20,70,250,1.0),
+            'M4435 Narrow-Band Scanner': Scanner(10,150,500,2.0),
+            'SCAN-R2 Advanced Resource Mapper': Scanner(70,250,500,2.5),
+            'M700 Survey Scanner': Scanner(15,500,7500,3.0),
+            'SCAN-RX Hyperspectral Resource Mapper': Scanner(100,500,750,3.0),
+            'VS-1 High Resolution Imager': Scanner(20,70,250,1.5),
+            'VS-11 Classified Reconnaissance Imager': Scanner(100,200,1000,4.0),
+            'VS-3 Advanced High Resolution Imager': Scanner(70,250,500,2.5),
+            'MS-1 Multispectral Scanner': Scanner(20,70,250,3.0),
+            'MS-R Enhanced Multispectral Scanner': Scanner(70,300,400,1.5),
+            'MS-2A Advanced Multispectral Scanner': Scanner(100,500,750,4.0),
+            }
+
+
+##@dataclass
+##class Body:
+##    mu: float
+##    radius: float
+##    sidereal_day: float
+##    safe_altitude: float
 
 
 def coprimes_of(n: int, limit: int = -1) -> Iterator[int]:
@@ -37,7 +64,7 @@ def cuberoot(n: float) -> float:
 
 
 def cubic_roots(a: float, b: float, c: float, d: float) -> Union[float, Tuple[float, float, float]]:
-    p = (3*a*c - b**2)/(3 * a**2)
+    p= (3*a*c - b**2)/(3 * a**2)
     q = (2*b**3 - 9*a*b*c + 27*d*a**2)/(27 * a**3)
 
     discriminant = (p**3)/27 + (q**2)/4
@@ -79,6 +106,12 @@ def cubic_roots(a: float, b: float, c: float, d: float) -> Union[float, Tuple[fl
 
     return t1-xt, t2-xt, t3-xt
 
+def ap_peri(sma, ecc, body):
+    linnear_ecc = ecc * sma
+    apoapsis = linnear_ecc + sma
+    periapsis = 2 * sma - apoapsis
+    slr = sma * (1 - ecc**2)
+    return (apoapsis-body.radius, periapsis-body.radius, slr-body.radius)
 
 def find_eccentricity_bounds(body: Body,
                              semi_major_axis: float,
@@ -98,7 +131,7 @@ def find_eccentricity_bounds(body: Body,
         return None
 
     ecc_fixed = math.sqrt((semi_major_axis - body.radius)/semi_major_axis)
-
+    
     min_past_limit = ecc_min > track_altitude/(2*track_altitude + body.radius)
     max_past_limit = track_altitude > body.radius * ecc_fixed
     if min_past_limit or max_past_limit:
@@ -118,8 +151,27 @@ def find_eccentricity_bounds(body: Body,
 
     return max(0, ecc_min), ecc_max
 
+def find_eccentricity_bounds_reduced(body: Body,
+                             semi_major_axis: float,
+                             track_altitude: float,
+                             min_altitude: float,
+                             max_altitude: float) -> Optional[Tuple[float, float]]:
 
-def find_orbits(body: Body, field_of_view: float, min_altitude: float, best_altitude: float, max_altitude: float, loose: bool):
+    ecc_polar = math.sqrt(max(1 - (body.radius + min_altitude)/semi_major_axis, 0))
+    ecc_periapsis = 1 - (body.radius + body.safe_altitude)/semi_major_axis
+    ecc_apoapsis = (body.radius + max_altitude)/semi_major_axis - 1
+
+    ecc_max = min(ecc_polar, ecc_periapsis, ecc_apoapsis)
+
+    ecc_min = (body.radius + track_altitude - semi_major_axis)/semi_major_axis
+
+    if ecc_min >= ecc_max:
+        return None
+
+    return max(0, ecc_min), ecc_max
+
+def find_orbits(body: Body, field_of_view: float, min_altitude: float, best_altitude: float, max_altitude: float,
+                loose: bool, ecc_bounder=find_eccentricity_bounds):
     """
     Calculates the orbit with the smallest semi-major axis capable of scanning the body in the shortest time possible
 
@@ -168,7 +220,7 @@ def find_orbits(body: Body, field_of_view: float, min_altitude: float, best_alti
             if semi_major_axis < min_radius_periapsis or semi_major_axis < min_radius_polar:
                 continue  # axis is too small, advance to increase
 
-            eccentricity = find_eccentricity_bounds(body, semi_major_axis, track_altitude, min_altitude, max_altitude)
+            eccentricity = ecc_bounder(body, semi_major_axis, track_altitude, min_altitude, max_altitude)
 
             if eccentricity is None:
                 continue  # no valid orbits, continue
@@ -189,13 +241,13 @@ def find_orbits(body: Body, field_of_view: float, min_altitude: float, best_alti
 
 
 def main():
-    bodies = {
-        "kerbin": Body(3.5316e12, KERBIN_RADIUS, 21549.425, 70000),
-        "mun": Body(6.5138398e10, 200000, 138984.38, 10000),
-        "minmus": Body(1.7658e9, 60000, 40400, 6000),
-        "gilly": Body(8289449.8, 13000, 28255, 8000),
-        "jool": Body(2.82528e14, 6000000, 36000, 200000)
-    }
+##    bodies = {
+##        "kerbin": Body(3.5316e12, KERBIN_RADIUS, 21549.425, 70000),
+##        "mun": Body(6.5138398e10, 200000, 138984.38, 10000),
+##        "minmus": Body(1.7658e9, 60000, 40400, 6000),
+##        "gilly": Body(8289449.8, 13000, 28255, 8000),
+##        "jool": Body(2.82528e14, 6000000, 36000, 200000)
+##    }
     body = input("input target body:")
     while body not in bodies:
         print(f"body ${body} not found, expected one of", bodies.keys)
@@ -210,6 +262,30 @@ def main():
     best_orbit = find_orbits(bodies[body], fov, min_alt, best_alt, max_alt, loose)
     print(best_orbit)
 
+def test():
+    for body_name, body in bodies.items():
+        for scanner_name, scanner in SCANNERS.items():
+            for loose_val in (True, False):
+                orig = find_orbits(body,
+                                   scanner.fov,
+                                   scanner.min_alt*1_000,
+                                   scanner.best_alt*1_000,
+                                   scanner.max_alt*1_000,
+                                   loose_val,
+                                   )
+                new =  find_orbits(body,
+                                   scanner.fov,
+                                   scanner.min_alt*1_000,
+                                   scanner.best_alt*1_000,
+                                   scanner.max_alt*1_000,
+                                   loose_val,
+                                   find_eccentricity_bounds_reduced,
+                                   )
+            if orig != new:
+                print(body_name, scanner_name, loose_val)
+                print(orig)
+                print(new)
+                print()
 
 if __name__ == '__main__':
-    main()
+    test()
